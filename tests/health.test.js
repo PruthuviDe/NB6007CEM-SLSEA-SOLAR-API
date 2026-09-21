@@ -1,7 +1,16 @@
 const request = require('supertest');
 const app = require('../src/app');
+const { connectDB, disconnectDB } = require('../src/data/db');
 
 describe('Phase 1: Environment & Project Scaffolding Tests', () => {
+
+  beforeAll(async () => {
+    await connectDB();
+  });
+
+  afterAll(async () => {
+    await disconnectDB();
+  });
 
   describe('GET / — Root Discovery Endpoint', () => {
     it('should return HTTP 200 OK with session identifier per Session 2 guideline', async () => {

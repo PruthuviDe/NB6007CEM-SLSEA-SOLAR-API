@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const config = require('../config/env');
 
 /**
@@ -8,11 +9,18 @@ const config = require('../config/env');
  * @access  Public
  */
 router.get('/health', (req, res) => {
+  const dbState = mongoose.connection.readyState;
+  const dbStatus = dbState === 1 ? 'connected' : dbState === 2 ? 'connecting' : 'disconnected';
+
   const healthData = {
-    status: 'pass',
+    status: dbState === 1 ? 'pass' : 'warn',
     service: 'SLSEA Solar Generation Telemetry API',
     version: '1.0.0',
     environment: config.nodeEnv,
+    database: {
+      status: dbStatus,
+      target: 'MongoDB Atlas (AWS Singapore/Mumbai)'
+    },
     timestamp: new Date().toISOString(),
     uptime_seconds: Math.floor(process.uptime()),
     memory_usage: {
