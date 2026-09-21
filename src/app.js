@@ -4,6 +4,7 @@ const cors = require('cors');
 const apiRoutes = require('./routes');
 const notFound = require('./middleware/notFound');
 const errorHandler = require('./middleware/errorHandler');
+const { validateAcceptHeader, validateContentTypeHeader } = require('./middleware/contentNegotiation');
 
 const app = express();
 
@@ -30,7 +31,11 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// 4. Session 2 Base Root Endpoint (matches coursework lecture expectation)
+// 4. Content Negotiation & Media Type Enforcement (WSO2 §8.1, §9)
+app.use(validateAcceptHeader);
+app.use(validateContentTypeHeader);
+
+// 5. Session 2 Base Root Endpoint (matches coursework lecture expectation)
 app.get('/', (req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -41,7 +46,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// 5. Mount API v1 Routes
+// 6. Mount API v1 Routes
 app.use('/api/v1', apiRoutes);
 
 // 6. 404 Unmapped Resource Handler
