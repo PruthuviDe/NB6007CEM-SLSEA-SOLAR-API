@@ -8,6 +8,7 @@ node_modules/
 
 # Local coursework materials, lecture notes, and diagrams
 Documents/
+agent.md
 
 # Logs and runtime data
 logs/
