@@ -92,6 +92,23 @@ describe('Phase 3: Seed Data Generation Engine & Referential Integrity Tests', (
 
       expect(uniqueMeterIds.size).toBe(installations.length);
     });
+
+    test('solar installations must comply with strict tier capacity bounds (residential 3-10kW, commercial 20-100kW, industrial 100-500kW)', async () => {
+      const installations = await SolarInstallation.find().select('installation_type capacity_kw -_id');
+
+      for (const inst of installations) {
+        if (inst.installation_type === 'residential') {
+          expect(inst.capacity_kw).toBeGreaterThanOrEqual(3.0);
+          expect(inst.capacity_kw).toBeLessThanOrEqual(10.0);
+        } else if (inst.installation_type === 'commercial') {
+          expect(inst.capacity_kw).toBeGreaterThanOrEqual(20.0);
+          expect(inst.capacity_kw).toBeLessThanOrEqual(100.0);
+        } else if (inst.installation_type === 'industrial') {
+          expect(inst.capacity_kw).toBeGreaterThanOrEqual(100.0);
+          expect(inst.capacity_kw).toBeLessThanOrEqual(500.0);
+        }
+      }
+    });
   });
 
   describe('3. Mathematical Diurnal Solar Physics & Telemetry Invariants', () => {

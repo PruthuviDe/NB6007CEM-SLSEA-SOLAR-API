@@ -4,13 +4,13 @@
  * SLSEA Solar Telemetry Database Seeding Engine
  * 
  * Populates MongoDB Atlas with a foreign-key-consistent energy dataset:
- * - 9 Provinces (ISO 3166-2:LK codes)
+ * - 9 Provinces (Sri Lankan administrative divisions / postal codes)
  * - 25 Administrative Districts
- * - 26 Grid Substations (CEB/LECO 132/33 kV and 220/33 kV)
- * - 205 Solar Installations across residential, commercial, and industrial tiers
+ * - 26 Grid Substations (Synthetic dataset based on publicly documented 132/33 kV and 220/33 kV nodes)
+ * - 205 Solar Installations across residential (3-10 kW), commercial (20-100 kW), and industrial (100-500 kW) tiers
  * - 5 Test Users covering National, Provincial, and District jurisdiction scopes
  * - 137,760 Telemetry Readings (7 full days @ 15-min intervals for 205 sites)
- *   generated via a mathematical solar diurnal model.
+ *   generated via a mathematical solar diurnal model with persistent daily weather factors.
  * 
  * Also outputs root `seed.json` reference snapshot for coursework compliance.
  */
@@ -39,7 +39,7 @@ function mulberry32(seed) {
   };
 }
 
-// 1. Static Reference Data: 9 Provinces
+// 1. Static Reference Data: 9 Sri Lankan Provinces (Postal/administrative abbreviations; ISO 3166-2:LK equivalent: LK-1 to LK-9)
 const PROVINCES_DATA = [
   { province_id: 1, code: 'WP', name: 'Western' },
   { province_id: 2, code: 'CP', name: 'Central' },
@@ -90,7 +90,9 @@ const DISTRICTS_DATA = [
   { district_id: 25, province_id: 9, code: 'KEG', name: 'Kegalle' }
 ];
 
-// 3. Static Reference Data: 26 Grid Substations
+// 3. Synthetic Reference Data: 26 Sri Lankan Grid Substations
+// Names and voltage classes are based on publicly documented Sri Lankan grid infrastructure;
+// capacities are representative synthetic values for coursework dataset generation.
 const SUBSTATIONS_DATA = [
   { substation_id: 1, district_id: 1, code: 'GS-COL-01', name: 'Colombo Fort Grid Substation', capacity_mva: 63, voltage_kv: '132/33 kV' },
   { substation_id: 2, district_id: 1, code: 'GS-COL-02', name: 'Kolonnawa Grid Substation', capacity_mva: 90, voltage_kv: '220/33 kV' },
@@ -137,19 +139,19 @@ function buildSolarInstallations() {
       const sub = substations[(i - 1) % substations.length];
       const invBrand = inverters[(installationId - 1) % inverters.length];
       
-      // Determine tier and capacity
+      // Determine tier and capacity (strictly complying with coursework ranges)
       let type, capacity, namePrefix;
       if (i <= 4) {
         type = 'residential';
-        capacity = Math.round((5 + (i * 2.2)) * 10) / 10; // 5.0 - 13.8 kW
+        capacity = [3.5, 5.0, 7.5, 9.5][i - 1]; // Strictly within 3.0 - 10.0 kW residential ceiling
         namePrefix = `${dist.name} Residential Solar Array`;
       } else if (i <= 7) {
         type = 'commercial';
-        capacity = Math.round((25 + (i * 7.5)) * 10) / 10; // 25 - 77.5 kW
+        capacity = [25.0, 50.0, 75.0][i - 5]; // Strictly within 20.0 - 100.0 kW commercial band
         namePrefix = `${dist.name} Commercial PV Array`;
       } else {
         type = 'industrial';
-        capacity = Math.round((120 + ((installationId % 5) * 65)) * 10) / 10; // 120 - 380 kW
+        capacity = [150.0, 250.0, 350.0, 480.0][(installationId - 1) % 4]; // Strictly within 100.0 - 500.0 kW industrial band
         namePrefix = `${dist.name} Industrial Solar Park`;
       }
 
@@ -161,9 +163,9 @@ function buildSolarInstallations() {
         status = 'offline';
       }
 
-      // Staggered commissioning date between 2022-01-10 and 2024-05-20
-      const baseDaysAgo = 300 + (installationId * 3);
-      const commDate = new Date(Date.now() - (baseDaysAgo * 24 * 60 * 60 * 1000));
+      // Deterministic commissioning dates staggered between 2023-01-15 and 2025-04-30 (independent of script execution date)
+      const BASE_COMMISSIONING_MS = new Date('2023-01-15T00:00:00.000Z').getTime();
+      const commDate = new Date(BASE_COMMISSIONING_MS + (installationId * 4 * 24 * 60 * 60 * 1000));
 
       installations.push({
         installation_id: installationId,
@@ -300,11 +302,19 @@ async function seedDatabase() {
   let totalInserted = 0;
   const sampleReadings = [];
 
-  // Track cumulative energy per installation across time
+  // Track cumulative energy per installation across time (physically linked to commissioning date & capacity)
   const cumulativeEnergyMap = new Map();
   for (const inst of installations) {
-    // Initial cumulative baseline (kWh) proportional to capacity and age
-    cumulativeEnergyMap.set(inst.installation_id, Math.round(inst.capacity_kw * 450 * 10) / 10);
+    const daysOperating = Math.max(1, Math.floor((BASE_START_TIME - inst.commissioning_date.getTime()) / (24 * 60 * 60 * 1000)));
+    const dailySpecificYield = 4.2; // Realistic Sri Lankan specific yield (~4.2 kWh/kWp/day)
+    const initialLifetimeEnergy = Math.round(inst.capacity_kw * daysOperating * dailySpecificYield * 10) / 10;
+    cumulativeEnergyMap.set(inst.installation_id, initialLifetimeEnergy);
+  }
+
+  // Pre-generate 7 persistent daily weather indices (0.92 to 1.06) for authentic meteorological persistence
+  const dailyWeatherFactors = [];
+  for (let d = 0; d < TOTAL_DAYS; d++) {
+    dailyWeatherFactors.push(0.92 + (rand() * 0.14));
   }
 
   process.stdout.write('      Progress: [');
@@ -319,9 +329,9 @@ async function seedDatabase() {
     const localMinutes = (recordedAt.getUTCHours() * 60 + recordedAt.getUTCMinutes() + 330) % 1440;
     const localHour = localMinutes / 60; // 0.00 to 23.99
 
-    // Weather variability factor for the day
+    // Persistent daily weather index across the 24-hour cycle
     const dayIndex = Math.floor(t / INTERVALS_PER_DAY);
-    const dayWeatherFactor = 0.92 + (rand() * 0.14); // 0.92 to 1.06
+    const dayWeatherFactor = dailyWeatherFactors[dayIndex];
 
     for (const inst of installations) {
       let powerKw = 0.0;
@@ -332,7 +342,8 @@ async function seedDatabase() {
       if (localHour >= 6.0 && localHour <= 18.25) {
         const solarAngle = Math.PI * ((localHour - 6.0) / 12.25);
         const sinIrradiance = Math.sin(solarAngle);
-        const cloudFactor = dayWeatherFactor * (0.95 + (rand() * 0.10));
+        // Combine persistent daily weather with subtle interval cloud micro-noise
+        const cloudFactor = dayWeatherFactor * (0.96 + (rand() * 0.08));
 
         if (inst.status === 'offline') {
           powerKw = 0.0;
@@ -424,7 +435,7 @@ async function seedDatabase() {
         total_readings_in_database: totalInserted
       },
       test_credentials: {
-        default_password: 'Password@123',
+        note: 'Synthetic coursework test accounts. Default test password: Password@123 (documented in README and test suites).',
         accounts: users.map(u => ({
           username: u.username,
           role: u.role,
